@@ -5,6 +5,7 @@ const STORAGE_KEY = 'storage_key'
 
 const localStoragePlugin = store => {
   store.subscribe((mutation, state) => {
+    console.log('localStorage')
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   })
 }
@@ -14,26 +15,26 @@ let localStorage = JSON.parse(window.localStorage.getItem(STORAGE_KEY))
 
 let socket = io('http://127.0.0.1:5000/test')
 socket.on('connect', () => {
-  mutations.connect(state)
+  store.commit('connect')
   socket.emit('send items')
 })
 socket.on('disconnect', () => {
+  store.commit('disconnect')
   mutations.disconnect(state)
 })
 socket.on('receive items', items => {
-  mutations.initializeItems(state, items)
+  store.commit('initializeItems',items)
 })
 socket.on('update item', item => {
-  mutations.upsertItemServer(state, item)
+  store.commit('upsertItemServer',item)
 })
 socket.on('reject update', data => {
   console.log('reject update', data)
-  if (
-    JSON.stringify(this.local_state[data['id']]) ===
-    JSON.stringify(data.rejected)
-  ) {
-    delete this.local_state[data['id']]
-  }
+  // if (
+  //   JSON.stringify(this.local_state[data['id']]) ===
+  //   JSON.stringify(data.rejected)
+  // ) {
+  //   delete this.local_state[data['id']]
 })
 
 const state = {
@@ -85,7 +86,6 @@ const mutations = {
       Vue.delete(state.items_local, item.id)
     }
   }
-
   // removeItem(state, item) {
   //   console.log('removeItem', item)
   //   Vue.set(state.pendingMutations, item.id, {
@@ -101,7 +101,7 @@ function push_mutations() {
     console.log(JSON.stringify(item))
     setTimeout(
       () => socket.emit('update item', item),
-      Math.floor(Math.random() * 10000)
+      Math.floor(Math.random() * 0)
     )
   }
 }
