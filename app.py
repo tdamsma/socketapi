@@ -24,6 +24,12 @@ class Item(db.Model):
     def __repr__(self):
         return f'<Item {self.id}@{self.modified}>'
 
+    def full(self):
+        return {
+            'id': self.id,
+            'data': self.data,
+            'modified': str(self.modified)
+        }
 
 @app.route('/<string:page_name>.jade/')
 def static_page_jade(page_name):
@@ -43,28 +49,28 @@ def static_page_js(page_name):
 @socketio.on('send items', namespace='/test')
 def send_items():
     print('send items')
-    emit('receive items', {item.id: item.data
+    emit('receive items', {item.id: item.full()
                            for item in db.session.query(Item).all()})
 
 
 @socketio.on('update item', namespace='/test')
-def test_message(data):
-    print('update item', data)
-    item = Item.query.get(data['id'])
+def update_item(updated_item):
+    print('update item', updated_item)
+    item = Item.query.get(updated_item['id'])
 
-    # verify
-    if 'x' in data['value']['letters']:
-        data = {
-            'id': data['id'],
-            'rejected': data['value'],
-            'reason': 'contains x',
-        }
-        emit('reject update', data)
-        return
+    # # verify
+    # if 'x' in data['value']['letters']:
+    #     data = {
+    #         'id': data['id'],
+    #         'rejected': data['value'],
+    #         'reason': 'contains x',
+    #     }
+    #     emit('reject update', data)
+    #     return
 
-    item.data = data['value']
+    item.data = updated_item['data']
     db.session.commit()
-    emit('update item', data, broadcast=True)
+    emit('update item', item.full(), broadcast=True)
 
 
 @socketio.on('my broadcast event', namespace='/test')
@@ -76,7 +82,6 @@ def test_message(message):
 @socketio.on('connect', namespace='/test')
 def test_connect():
     print('Client connected')
-    emit('my response', {'data': 'Connected'})
 
 
 @socketio.on('disconnect', namespace='/test')

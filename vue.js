@@ -12,37 +12,97 @@ console.log(localStoragePlugin)
 
 let localStorage = JSON.parse(window.localStorage.getItem(STORAGE_KEY))
 
+let socket = io('http://127.0.0.1:5000/test')
+socket.on('connect', () => {
+  mutations.connect(state)
+  socket.emit('send items')
+})
+socket.on('disconnect', () => {
+  mutations.disconnect(state)
+})
+socket.on('receive items', items => {
+  mutations.initializeItems(state, items)
+})
+socket.on('update item', item => {
+  mutations.upsertItemServer(state, item)
+})
+socket.on('reject update', data => {
+  console.log('reject update', data)
+  if (
+    JSON.stringify(this.local_state[data['id']]) ===
+    JSON.stringify(data.rejected)
+  ) {
+    delete this.local_state[data['id']]
+  }
+})
+
 const state = {
-  items: _.get(localStorage, 'items', {}),
-  pendingMutations: _.get(localStorage, 'pendingMutations', {})
+  items_server: _.get(localStorage, 'items_server', {}),
+  items_local: _.get(localStorage, 'items_local', {}),
+  connected: false
 }
 
 const getters = {
-  item: state => itemId => {
-    return { id: itemId, data: state.items[itemId] }
-  },
-  items: (state, getters) => Object.keys(state.items).map(getters.item)
+  connected: state => state.connected,
+  items: state => Object.assign(state.items_server, state.items_local),
+  item: (state, getters) => itemId => getters.items[itemId],
+  item_list: (state, getters) => Object.keys(getters.items).map(getters.item),
+  mutated_item: state => itemId => state.items_local[itemId],
+  mutated_item_list: state =>
+    Object.keys(state.items_local).map(itemId => state.items_local[itemId])
 }
 
 const mutations = {
+  connect(state) {
+    console.log('mutation: connect')
+    Vue.set(state, 'connected', true)
+  },
+  disconnect(state) {
+    console.log('mutation: disconnect')
+    Vue.set(state, 'connected', false)
+  },
   initializeItems(state, items) {
-    Vue.set(state, 'items', items)
+    console.log('mutation: initializeItems')
+    Vue.set(state, 'items_server', items)
   },
-  upsertItem(state, item) {
-    console.log('upsertItem', item)
-    Vue.set(state.pendingMutations, item.id, {
-      action: 'upsert',
-      when: new Date()
-    })
-    Vue.set(state.eventSourcedItems, item.id, item._state())
+  upsertItemLocal(state, item) {
+    console.log('mutation: upsertItemLocal', JSON.stringify(item))
+    Vue.set(state.items_local, item.id, item)
+    push_mutations()
   },
-  removeItem(state, item) {
-    console.log('removeItem', item)
-    Vue.set(state.pendingMutations, item.id, {
-      action: 'remove',
-      when: new Date()
-    })
-    Vue.set(state.eventSourcedItems[item.id].$meta, 'is_deleted', true)
+
+  upsertItemServer(state, item) {
+    console.log('mutation: upsertItemServer', JSON.stringify(item))
+    Vue.set(state.items_server, item.id, item)
+
+    if (
+      item.id in state.items_local &&
+      _.isEqual(
+        state.items_server[item.id].data,
+        state.items_local[item.id].data
+      )
+    ) {
+      Vue.delete(state.items_local, item.id)
+    }
+  }
+
+  // removeItem(state, item) {
+  //   console.log('removeItem', item)
+  //   Vue.set(state.pendingMutations, item.id, {
+  //     action: 'remove',
+  //     when: new Date()
+  //   })
+  //   Vue.set(state.eventSourcedItems[item.id].$meta, 'is_deleted', true)
+  // }
+}
+
+function push_mutations() {
+  for (let item of getters.mutated_item_list(state)) {
+    console.log(JSON.stringify(item))
+    setTimeout(
+      () => socket.emit('update item', item),
+      Math.floor(Math.random() * 10000)
+    )
   }
 }
 
@@ -52,80 +112,76 @@ const store = new Vuex.Store({
   mutations
 })
 
+localStoragePlugin(store)
+
+Vue.component('item', {
+  template: `
+  <div>
+  <p> ID: {{item.id}} modified: <i>{{item.modified}}</i></p> 
+  <input type="text"  v-model="letters"></input>
+  <input type="number" v-model="number"></input>
+  </div>`,
+  props: ['item'],
+  computed: {
+    letters: {
+      get() {
+        return this.item.data.letters
+      },
+      set(letters) {
+        this.$store.commit(
+          'upsertItemLocal',
+          _.merge(this.item, { data: { letters } })
+        )
+      }
+    },
+    number: {
+      get() {
+        return this.item.data.number
+      },
+      set(number) {
+        this.$store.commit(
+          'upsertItemLocal',
+          _.merge(this.item, { data: { number } })
+        )
+      }
+    }
+  }
+})
+
 new Vue({
   el: '#app',
+  template: `
+  <div>      
+  <h1>{{title}}</h1>
+  <ul>
+    <li v-for="item in item_list">
+      <item :item="item" />
+    </li>
+  </ul>
+
+  <h2>Mutated</h2>
+  <ul>
+    <li v-for="item in mutated_item_list">
+      <item :item="item" />
+    </li>
+  </ul>
+  </div>`,
   store,
-  data: {
-    connected: false,
-    server_state: {},
-    local_state: {},
-    socket: 1
-  },
+  data: {},
   computed: {
-    ...Vuex.mapGetters(['items']),
-    title: () => (this.connected ? 'Connected' : 'Not connected')
+    ...Vuex.mapGetters(['connected', 'item_list', 'mutated_item_list']),
+    title: function() {
+      return this.connected ? 'Connected' : 'Not connected'
+    }
   },
   methods: {
     ...Vuex.mapMutations(['initializeItems', 'upsertItem', 'removeItem']),
     edit: function(id, event) {
       let value = event.target.value
       this.upsertItem(id, { letters: value })
-
-      this.socket.emit('update item', {
-        id,
-        value: {
-          letters: value
-        }
-      })
     }
   },
   mounted: function() {
     window.this = this
-    this.socket = io('http://127.0.0.1:5000/test')
-    this.socket.on('connect', () => {
-      console.log('connect')
-      this.connected = true
-      this.socket.emit('send items')
-    })
-    this.socket.on('disconnect', () => {
-      console.log('disconnect')
-      this.connected = false
-    })
-    this.socket.on('receive items', state => {
-      console.log('receive items')
-      this.initializeItems(state)
-    })
-    this.socket.on('update item', data => {
-      console.log('update item', data)
-      if (
-        JSON.stringify(this.local_state[data['id']]) ===
-        JSON.stringify(data.value)
-      ) {
-        this.$delete(this.local_state, data['id'])
-        // tmp = this.server_state[data['id']]r
-        // this.server_state[data['id']] = {}
-        // this.$forceUpdate()
-      } else {
-        console.log(
-          'state different:',
-          this.local_state[data['id']],
-          data.value
-        )
-      }
-      this.server_state[data['id']] = data.value
-    })
-    this.socket.on('reject update', data => {
-      console.log('reject update', data)
-      if (
-        JSON.stringify(this.local_state[data['id']]) ===
-        JSON.stringify(data.rejected)
-      ) {
-        delete this.local_state[data['id']]
-      }
-    })
-    this.socket.on('my response', data => {
-      console.log('my response', data)
-    })
   }
-}) 
- 
+})
