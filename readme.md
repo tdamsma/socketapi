@@ -1,7 +1,9 @@
 # README
 
-* intall flask
-* open and run the notebook to initilize teh postgres database
+A bare bones example of wiring a Flask backend and a Vue frontend together with socket.io for offline first webapps.
+
+* install flask and other dependencies
+* open and run the notebook to initilize the postgres database
 * start flask server:
 
   ``` bash
