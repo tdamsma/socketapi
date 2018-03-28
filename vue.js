@@ -16,6 +16,7 @@ let localStorage = JSON.parse(window.localStorage.getItem(STORAGE_KEY))
 let socket = io('http://127.0.0.1:5000/test')
 socket.on('connect', () => {
   store.commit('connect')
+  push_mutations()  
   socket.emit('send items')
 })
 socket.on('disconnect', () => {
@@ -28,13 +29,8 @@ socket.on('receive items', items => {
 socket.on('update item', item => {
   store.commit('upsertItemServer',item)
 })
-socket.on('reject update', data => {
-  console.log('reject update', data)
-  // if (
-  //   JSON.stringify(this.local_state[data['id']]) ===
-  //   JSON.stringify(data.rejected)
-  // ) {
-  //   delete this.local_state[data['id']]
+socket.on('reject update', rejection => {
+  console.log('reject update', rejection )
 })
 
 const state = {
@@ -86,14 +82,6 @@ const mutations = {
       Vue.delete(state.items_local, item.id)
     }
   }
-  // removeItem(state, item) {
-  //   console.log('removeItem', item)
-  //   Vue.set(state.pendingMutations, item.id, {
-  //     action: 'remove',
-  //     when: new Date()
-  //   })
-  //   Vue.set(state.eventSourcedItems[item.id].$meta, 'is_deleted', true)
-  // }
 }
 
 function push_mutations() {

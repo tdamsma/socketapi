@@ -31,6 +31,7 @@ class Item(db.Model):
             'modified': str(self.modified)
         }
 
+
 @app.route('/<string:page_name>.jade/')
 def static_page_jade(page_name):
     return render_template('%s.jade' % page_name)
@@ -58,15 +59,15 @@ def update_item(updated_item):
     print('update item', updated_item)
     item = Item.query.get(updated_item['id'])
 
-    # # verify
-    # if 'x' in data['value']['letters']:
-    #     data = {
-    #         'id': data['id'],
-    #         'rejected': data['value'],
-    #         'reason': 'contains x',
-    #     }
-    #     emit('reject update', data)
-    #     return
+    # verify
+    if 'x' in updated_item['data']['letters']:
+        rejection = {
+            'id': updated_item['id'],
+            'rejected': updated_item['data'],
+            'reason': 'letters contains x',
+        }
+        emit('reject update', rejection)
+        return
 
     item.data = updated_item['data']
     db.session.commit()
